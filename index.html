@@ -156,6 +156,12 @@
             align-items: center;
         }
 
+        .cmp-tierbar {
+            margin-bottom: .75rem;
+            padding-bottom: .55rem;
+            border-bottom: 1px solid var(--line);
+        }
+
         label.chk {
             font-size: .85rem;
             color: var(--muted);
@@ -181,6 +187,10 @@
 
         .match-love {
             background: #33522f;
+        }
+
+        .match-strong {
+            background: #3a5a30;
         }
 
         .match-good {
@@ -273,6 +283,10 @@
         }
 
         .match-love {
+            background: #a8e0a8;
+        }
+
+        .match-strong {
             background: #bdebbd;
         }
 
@@ -293,6 +307,7 @@
         }
 
         .match-love .meter,
+        .match-strong .meter,
         .match-good .meter {
             color: #1f6b1f;
         }
@@ -308,6 +323,84 @@
         .banflag {
             color: #b00020;
             font-weight: 800;
+        }
+
+        .cmp-section {
+            margin: 1rem 0;
+            border: 1px solid #3a3f4b;
+            border-radius: 10px;
+            background: #20242e;
+            overflow: hidden;
+        }
+
+        .cmp-section > summary {
+            padding: .55rem .75rem;
+            font-weight: 600;
+            cursor: pointer;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            background: #282d38;
+        }
+
+        .cmp-section > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .cmp-section > summary::before {
+            content: '▸';
+            opacity: .6;
+            font-size: .85rem;
+        }
+
+        .cmp-section[open] > summary::before {
+            content: '▾';
+        }
+
+        .cmp-section-hint {
+            font-weight: 400;
+            font-size: .78rem;
+            color: var(--muted);
+            flex: 1;
+        }
+
+        .cmp-section-count {
+            font-size: .78rem;
+            color: var(--muted);
+            font-weight: 400;
+        }
+
+        .cmp-section-body {
+            padding: .35rem .6rem .6rem;
+        }
+
+        .cmp-cat {
+            font-size: .72rem;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            color: var(--muted);
+            margin: .65rem 0 .25rem;
+            padding-top: .35rem;
+            border-top: 1px solid #3a3f4b;
+        }
+
+        .cmp-cat:first-child {
+            margin-top: .15rem;
+            padding-top: 0;
+            border-top: none;
+        }
+
+        .cmp-section--risky > summary {
+            background: #3a2828;
+        }
+
+        .cmp-section--caution > summary {
+            background: #3a3828;
+        }
+
+        .cmp-section--ban > summary {
+            background: #3a2222;
         }
 
         .searchbox {
@@ -1144,32 +1237,33 @@
             });
         }
 
-        /* skip = both exactly Unsure (and no ban) → don't show, don't count. */
+        /* Unsure = neutral (~50%): no veto, no strong pull either way. Ban still hard-stops. */
         function pairScore(a, b) {
-            if (a === 0 || b === 0) return { s: 0, max: 1, ban: true, skip: false };
-            if (a === DEFAULT && b === DEFAULT) return { skip: true };
-            const strength = x => [0, 0, 0.15, 0.4, 0.75, 1][x];
-            return { s: Math.min(strength(a), strength(b)), max: 1, ban: false, skip: false };
+            if (a === 0 || b === 0) return { s: 0, max: 1, ban: true, neutral: false };
+            const strength = x => [0, 0.2, 0.45, 0.5, 0.9, 1][x];
+            const sa = strength(a), sb = strength(b);
+            const s = (a <= 2 || b <= 2) ? Math.min(sa, sb) : (sa + sb) / 2;
+            return { s, max: 1, ban: false, neutral: a === DEFAULT && b === DEFAULT };
         }
 
         /* Returns groups: [{heading, rows:[{label,pct,ban}]}] + overall pct + bans list */
-        function score(my, their) {
+        function score(my, their, activeTiers = null) {
             const groups = []; const bans = [];
             let total = 0, max = 0;
             const handled = new Set();
 
             KINKS.forEach(k => {
                 if (handled.has(k.id)) return;
+                if (activeTiers && !activeTiers.has(k.tier)) return;
                 if (!tierEngaged(my, k.tier) || !tierEngaged(their, k.tier)) return;
                 handled.add(k.id);
                 const rows = [];
 
                 const addDir = (label, a, b) => {
                     const p = pairScore(a, b);
-                    if (p.skip) return;
-                    if (p.ban) { rows.push({ label, pct: 0, ban: true }); bans.push(label); return; }
+                    if (p.ban) { rows.push({ label, pct: 0, ban: true, neutral: false }); bans.push(label); return; }
                     total += p.s; max += p.max;
-                    rows.push({ label, pct: Math.round(100 * p.s / p.max), ban: false });
+                    rows.push({ label, pct: Math.round(100 * p.s / p.max), ban: false, neutral: p.neutral });
                 };
 
                 if (isDirectional(k)) {
@@ -1184,22 +1278,24 @@
                 } else {
                     // single shared interest
                     const p = pairScore(my[k.id][0], their[k.id][0]);
-                    if (p.skip) return;
-                    if (p.ban) { rows.push({ label: k.act ? k.act[0] : k.name, pct: 0, ban: true }); bans.push(k.name); }
+                    if (p.ban) { rows.push({ label: k.act ? k.act[0] : k.name, pct: 0, ban: true, neutral: false }); bans.push(k.name); }
                     else {
                         total += p.s; max += p.max;
-                        rows.push({ label: k.act ? k.act[0] : k.name, pct: Math.round(100 * p.s / p.max), ban: false });
+                        rows.push({ label: k.act ? k.act[0] : k.name, pct: Math.round(100 * p.s / p.max), ban: false, neutral: p.neutral });
                     }
                 }
 
-                if (rows.length) groups.push({ heading: k.name, tier: k.tier, rows });
+                if (rows.length) groups.push({ heading: k.name, cat: k.cat, tier: k.tier, rows });
             });
 
-            return { pct: max ? Math.round(100 * total / max) : 0, groups, bans };
+            const compared = groups.reduce((n, g) => n + g.rows.length, 0);
+            return { pct: max ? Math.round(100 * total / max) : 0, groups, bans, compared };
         }
 
         /* ============================ UI ============================ */
         const visibleTiers = new Set([0, 1]);
+        let lastCompare = null;
+        let compareVisibleTiers = new Set();
         let STATE = {};
         let searchQuery = '';
         let searchTimer = null;
@@ -1363,7 +1459,8 @@
         }
         function resetAll() {
             if (!confirm("Reset all answers to 'Unsure'?")) return;
-            STATE = {}; applyState(); refresh(); document.getElementById('comparison').innerHTML = '';
+            STATE = {}; applyState(); refresh(); lastCompare = null; compareVisibleTiers = new Set();
+            document.getElementById('comparison').innerHTML = '';
         }
         function flash(msg) {
             let n = document.getElementById('flash');
@@ -1379,6 +1476,124 @@
             const filled = Math.round(pct / 10);
             return '█'.repeat(filled) + '░'.repeat(10 - filled);
         }
+        /* Compare match bands (5 tiers). min = inclusive lower bound; next band's min is exclusive upper. */
+        const MATCH_BANDS = [
+            { min: 90, cls: 'match-love', title: 'Excellent', hint: '90%+ - mutual enthusiasm', open: true },
+            { min: 75, cls: 'match-strong', title: 'Strong', hint: '75–89% - great fit', open: true },
+            { min: 60, cls: 'match-good', title: 'Good', hint: '60–74% - worth discussing', open: false },
+            { min: 45, cls: 'match-mid', title: 'Caution', hint: '45–59% - mixed signals', open: false, sectionClass: 'cmp-section--caution' },
+            { min: 0, cls: 'match-no', title: 'Risky', hint: 'Under 45% - probably skip', open: true, sectionClass: 'cmp-section--risky', rowSortAsc: true, sortLow: true },
+        ];
+        function rowClass(row) {
+            if (row.ban) return 'match-ban';
+            const band = MATCH_BANDS.find(b => row.pct >= b.min);
+            return band ? band.cls : 'match-no';
+        }
+        function inMatchBand(row, band, nextMin) {
+            if (row.ban || row.neutral) return false;
+            if (nextMin != null) return row.pct >= band.min && row.pct < nextMin;
+            return row.pct >= band.min;
+        }
+        function renderCompareRow(row) {
+            if (row.ban) {
+                return `<div class="result match-ban">
+              <span class="res-name">${row.label}</span>
+              <span class="res-val"><span class="banflag">⛔ ban</span></span>
+            </div>`;
+            }
+            const cls = rowClass(row);
+            return `<div class="result ${cls}">
+              <span class="res-name">${row.label}<br><span class="meter">${bar(row.pct)}</span></span>
+              <span class="res-val">${row.pct}%</span>
+            </div>`;
+        }
+        function renderCompareSection(title, hint, groups, rowFilter, sortGroups, opts = {}) {
+            const filtered = groups.map(g => ({
+                ...g,
+                rows: g.rows.filter(rowFilter).sort((a, b) => (opts.rowSortAsc ? a.pct - b.pct : b.pct - a.pct))
+            })).filter(g => g.rows.length);
+            if (sortGroups) filtered.sort(sortGroups);
+            if (!filtered.length) return '';
+
+            let body = '';
+            let lastCat = '';
+            filtered.forEach(g => {
+                if (g.cat !== lastCat) {
+                    body += `<div class="cmp-cat">${g.cat}</div>`;
+                    lastCat = g.cat;
+                }
+                body += `<div class="group">
+          <div class="group-head">${g.heading} <span class="cat-tier">${TIERS[g.tier]}</span></div>`;
+                g.rows.forEach(row => { body += renderCompareRow(row); });
+                body += `</div>`;
+            });
+
+            const count = filtered.reduce((n, g) => n + g.rows.length, 0);
+            const open = opts.open !== false ? ' open' : '';
+            const extra = opts.className ? ` ${opts.className}` : '';
+            return `<details class="cmp-section${extra}"${open}>
+            <summary>${title}<span class="cmp-section-hint">${hint}</span><span class="cmp-section-count">${count}</span></summary>
+            <div class="cmp-section-body">${body}</div>
+          </details>`;
+        }
+        function sharedEngagedTiers(my, their) {
+            return [0, 1, 2, 3].filter(t => tierEngaged(my, t) && tierEngaged(their, t));
+        }
+        function buildCompareTierBar(sharedTiers) {
+            if (sharedTiers.length <= 1) return '';
+            let html = '<div class="tierbar cmp-tierbar"><b>Compare intensity:</b>';
+            sharedTiers.forEach(t => {
+                const checked = compareVisibleTiers.has(t) ? ' checked' : '';
+                html += `<label class="chk"><input type="checkbox" class="cmpTierToggle" data-tier="${t}"${checked}> ${TIERS[t]}</label>`;
+            });
+            return html + '</div>';
+        }
+        function renderComparison() {
+            if (!lastCompare) return;
+            const { myMap, theirMap, sharedTiers } = lastCompare;
+            const r = score(myMap, theirMap, compareVisibleTiers);
+            const groupSortHigh = (a, b) => Math.max(...b.rows.map(x => x.pct)) - Math.max(...a.rows.map(x => x.pct));
+            const groupSortLow = (a, b) => Math.min(...a.rows.map(x => x.pct)) - Math.min(...b.rows.map(x => x.pct));
+            const byCat = (a, b) => a.cat.localeCompare(b.cat) || a.heading.localeCompare(b.heading);
+
+            let html = buildCompareTierBar(sharedTiers);
+
+            if (!compareVisibleTiers.size) {
+                html += `<p style="text-align:center;opacity:.7;margin:1rem 0">Select at least one intensity tier above.</p>`;
+                document.getElementById('comparison').innerHTML = html;
+                return;
+            }
+
+            html += `<div class="score">${r.pct}%</div>
+            <small style="display:block;text-align:center;margin-bottom:.6rem">Based on ${r.compared} scored direction${r.compared === 1 ? '' : 's'} in selected tiers. Unsure = neutral (~50%). Both-Unsure rows hidden.</small>`;
+
+            html += renderCompareSection(
+                'Hard limits',
+                'Either side vetoed - do not push',
+                r.groups,
+                row => row.ban,
+                (a, b) => byCat(a, b),
+                { open: true, className: 'cmp-section--ban' }
+            );
+            MATCH_BANDS.forEach((band, i) => {
+                const nextMin = i > 0 ? MATCH_BANDS[i - 1].min : null;
+                html += renderCompareSection(
+                    band.title,
+                    band.hint,
+                    r.groups,
+                    row => inMatchBand(row, band, nextMin),
+                    (a, b) => byCat(a, b) || (band.sortLow ? groupSortLow(a, b) : groupSortHigh(a, b)),
+                    { open: band.open, className: band.sectionClass, rowSortAsc: band.rowSortAsc }
+                );
+            });
+
+            const hasDetail = r.groups.some(g => g.rows.some(row => !row.neutral));
+            if (!hasDetail) {
+                html += `<p style="text-align:center;opacity:.7;margin-top:1rem">Nothing scored in the selected tiers - try enabling more intensity levels or filling in answers beyond Unsure.</p>`;
+            }
+
+            document.getElementById('comparison').innerHTML = html;
+        }
         async function compare() {
             const myRaw = document.getElementById('myCode').value.trim();
             const theirRaw = document.getElementById('theirCode').value.trim();
@@ -1390,66 +1605,23 @@
             const theirVals = await decode(theirRaw);
             if (!theirVals) return;
             const theirMap = valsToMap(theirVals);
-            const r = score(myMap, theirMap);
-
-            const skippedNote = (label, map) => {
-                const tiers = [0, 1, 2, 3].filter(t => !tierEngaged(map, t)).map(t => TIERS[t]);
-                if (!tiers.length) return '';
-                return `${label}: no answers in ${tiers.join(', ')} (all Unsure in their code - tier ignored). `;
-            };
-            const skipMsg = skippedNote('You', myMap) + skippedNote('Them', theirMap);
-
-            let html = `<div class="score">${r.pct}%</div>
-            <small style="display:block;text-align:center">overall - only intensity tiers where <b>both</b> of you changed at least one answer from Unsure</small>`;
-            if (skipMsg) html += `<small style="display:block;text-align:center;margin:.35rem 0;opacity:.85">${skipMsg}</small>`;
-
-            if (r.bans.length) {
-                html += `<div class="result match-ban"><span class="banflag">⚠ Hard limits (vetoed):</span>
-              <span>${[...new Set(r.bans)].join(', ')}</span></div>
-              <small style="display:block;margin:.3rem 0">A ⛔Ban from either side removes that activity entirely. No negotiation.</small>`;
-            }
-
-            // sort groups: best average direction first, ban-containing groups to the bottom
-            const groupAvg = g => {
-                const nonBan = g.rows.filter(x => !x.ban);
-                if (!nonBan.length) return -1; // only bans
-                return nonBan.reduce((s, x) => s + x.pct, 0) / nonBan.length;
-            };
-            r.groups.sort((a, b) => {
-                const aHasBan = a.rows.some(x => x.ban), bHasBan = b.rows.some(x => x.ban);
-                if (aHasBan !== bHasBan) return aHasBan ? 1 : -1;
-                return groupAvg(b) - groupAvg(a);
-            });
-
-            r.groups.forEach(g => {
-                html += `<div class="group">
-          <div class="group-head">${g.heading} <span class="cat-tier">${TIERS[g.tier]}</span></div>`;
-                g.rows.forEach(row => {
-                    if (row.ban) {
-                        html += `<div class="result match-ban">
-              <span class="res-name">${row.label}</span>
-              <span class="res-val"><span class="banflag">⛔ banned</span></span>
-            </div>`;
-                    } else {
-                        let cls = 'match-no';
-                        if (row.pct >= 75) cls = 'match-love';
-                        else if (row.pct >= 45) cls = 'match-good';
-                        else if (row.pct > 0) cls = 'match-mid';
-                        html += `<div class="result ${cls}">
-              <span class="res-name">${row.label}<br><span class="meter">${bar(row.pct)}</span></span>
-              <span class="res-val">${row.pct}%</span>
-            </div>`;
-                    }
-                });
-                html += `</div>`;
-            });
-
-            if (!r.groups.length) {
-                html += `<p style="text-align:center;opacity:.7">No overlapping interests to show - either nothing in common yet, or you're both 'Unsure' on everything you've enabled.</p>`;
-            }
-
-            document.getElementById('comparison').innerHTML = html;
+            const sharedTiers = sharedEngagedTiers(myMap, theirMap);
+            compareVisibleTiers = new Set(sharedTiers);
+            lastCompare = { myMap, theirMap, sharedTiers };
+            renderComparison();
         }
+
+        document.getElementById('comparison').addEventListener('change', e => {
+            if (!e.target.classList.contains('cmpTierToggle')) return;
+            const t = +e.target.dataset.tier;
+            if (e.target.checked) {
+                compareVisibleTiers.add(t);
+                if (t >= 3) alert("Heads up: this section includes high-risk / extreme content. Educate yourself; prioritise safety & consent.");
+            } else {
+                compareVisibleTiers.delete(t);
+            }
+            renderComparison();
+        });
 
         /* ============================ INIT ============================ */
         (async function init() {
