@@ -451,8 +451,8 @@
         ];
 
         /* act: one string = single opinion; two strings = you→them / them→you (compare labels).
-           pairsWith: complementary kink id (one opinion slot each). UI labels derived from act.
-           ORDER FROZEN BY VERSION — append only. */
+           pairsWith: complementary kink (one slot each); primary entry MUST have act[0] and act[1].
+           UI labels derived from act via actAsI(). ORDER FROZEN BY VERSION - append only. */
         const KINKS = [
             // ---- Sensory & Restraint ----
             {
@@ -478,7 +478,7 @@
 
             // ---- Power Exchange ----
             {
-                id: "dom", cat: "Power Exchange", tier: 1, name: "Dominance", aka: "control, topping (D/s)", pairsWith: "sub", act: ["You dominate them"],
+                id: "dom", cat: "Power Exchange", tier: 1, name: "Dominance", aka: "control, topping (D/s)", pairsWith: "sub", act: ["You dominate them", "They dominate you"],
                 desc: "Taking the leading/controlling role in a power dynamic."
             },
             {
@@ -570,7 +570,7 @@
 
             // ---- Exposure & Watching ----
             {
-                id: "exhib", cat: "Exposure & Watching", tier: 1, name: "Exhibitionism", aka: "being watched", pairsWith: "voyeur", act: ["They watch you perform"],
+                id: "exhib", cat: "Exposure & Watching", tier: 1, name: "Exhibitionism", aka: "being watched", pairsWith: "voyeur", act: ["They watch you perform", "You watch them perform"],
                 desc: "Arousal from being seen/watched (consensually)."
             },
             {
@@ -639,7 +639,7 @@
                 desc: "Clinical-style straps/restraints - often paired with medical roleplay." },
 
             // ---- Power Exchange (expanded) ----
-            { id: "brat", cat: "Power Exchange", tier: 1, name: "Bratting", aka: "being a brat", pairsWith: "brat_tamer", act: ["You brat, they tame"],
+            { id: "brat", cat: "Power Exchange", tier: 1, name: "Bratting", aka: "being a brat", pairsWith: "brat_tamer", act: ["You brat, they tame", "They brat, you tame"],
                 desc: "Playful defiance and pushback within a D/s dynamic." },
             { id: "brat_tamer", cat: "Power Exchange", tier: 1, name: "Brat taming", aka: "handling brats", pairsWith: "brat", act: ["They brat, you tame"],
                 desc: "Enjoyment of handling, correcting, or 'putting a brat in their place' consensually." },
@@ -757,7 +757,7 @@
                 desc: "Costumed hero/villain capture or battle roleplay." },
             { id: "cosplay", cat: "Roleplay & Personas", tier: 0, name: "Cosplay sex", aka: "character dress-up", act: ["You both enjoy cosplay sex"],
                 desc: "Sex while in character costumes - distinct from generic uniforms." },
-            { id: "primal_hunt", cat: "Roleplay & Personas", tier: 2, name: "Primal hunter", aka: "predator chase", pairsWith: "primal_prey", act: ["You hunt, they are prey"],
+            { id: "primal_hunt", cat: "Roleplay & Personas", tier: 2, name: "Primal hunter", aka: "predator chase", pairsWith: "primal_prey", act: ["You hunt, they are prey", "They hunt, you are prey"],
                 desc: "Chase-and-capture primal energy - often rough, animalistic." },  
             { id: "primal_prey", cat: "Roleplay & Personas", tier: 2, name: "Primal prey", aka: "being hunted", pairsWith: "primal_hunt", act: ["They hunt, you are prey"],
                 desc: "Being chased, caught, or 'taken' in primal play." },
@@ -1177,8 +1177,10 @@
                     addDir(k.act[1], their[k.id][0], my[k.id][1]); // them giving → you receiving
                 } else if (k.pairsWith) {
                     const p = byId(k.pairsWith); handled.add(p.id);
-                    addDir(k.act[0], my[k.id][0], their[p.id][0]); // you exhib ↔ them voyeur
-                    addDir(k.act[1], their[k.id][0], my[p.id][0]);  // them exhib ↔ you voyeur
+                    const labelA = k.act[0];
+                    const labelB = k.act[1] || p.act[1] || p.act[0];
+                    addDir(labelA, my[k.id][0], their[p.id][0]);
+                    addDir(labelB, their[k.id][0], my[p.id][0]);
                 } else {
                     // single shared interest
                     const p = pairScore(my[k.id][0], their[k.id][0]);
@@ -1393,12 +1395,12 @@
             const skippedNote = (label, map) => {
                 const tiers = [0, 1, 2, 3].filter(t => !tierEngaged(map, t)).map(t => TIERS[t]);
                 if (!tiers.length) return '';
-                return `${label}: no answers in ${tiers.join(', ')} (all Unsure in their code — tier ignored). `;
+                return `${label}: no answers in ${tiers.join(', ')} (all Unsure in their code - tier ignored). `;
             };
             const skipMsg = skippedNote('You', myMap) + skippedNote('Them', theirMap);
 
             let html = `<div class="score">${r.pct}%</div>
-            <small style="display:block;text-align:center">overall — only intensity tiers where <b>both</b> of you changed at least one answer from Unsure</small>`;
+            <small style="display:block;text-align:center">overall - only intensity tiers where <b>both</b> of you changed at least one answer from Unsure</small>`;
             if (skipMsg) html += `<small style="display:block;text-align:center;margin:.35rem 0;opacity:.85">${skipMsg}</small>`;
 
             if (r.bans.length) {
