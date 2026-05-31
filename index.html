@@ -1302,6 +1302,26 @@
         let codeParseTimer = null;
         let suppressCodeParse = false;
 
+        function syncTierCheckboxes() {
+            document.querySelectorAll('.tierToggle').forEach(cb => {
+                cb.checked = visibleTiers.has(+cb.dataset.tier);
+            });
+        }
+        /* Turn on Heavy/Edge & Extreme when loaded code has answers there; turn off when it doesn't. */
+        function syncVisibleTiersFromMap(map) {
+            let addedExtreme = false;
+            [2, 3].forEach(t => {
+                if (tierEngaged(map, t)) {
+                    if (t === 3 && !visibleTiers.has(3)) addedExtreme = true;
+                    visibleTiers.add(t);
+                } else {
+                    visibleTiers.delete(t);
+                }
+            });
+            syncTierCheckboxes();
+            return addedExtreme;
+        }
+
         function matchesSearch(k) {
             if (!searchQuery) return true;
             const hay = `${k.name} ${k.aka || ''} ${k.desc}`.toLowerCase();
@@ -1402,9 +1422,11 @@
             const vals = await decode(raw, silent);
             if (!vals) return false;
             STATE = valsToMap(vals);
-            applyState();
+            const addedExtreme = syncVisibleTiersFromMap(STATE);
+            buildUI();
             const code = document.getElementById('myCode').value.trim();
             syncUrlToCode(code || VERSION);
+            if (addedExtreme) alert("Heads up: this section includes high-risk / extreme content. Educate yourself; prioritise safety & consent.");
             return true;
         }
         async function loadVals(vals) { STATE = valsToMap(vals); applyState(); await refresh(); }
@@ -1434,6 +1456,7 @@
                 snapshotState();
                 const t = +cb.dataset.tier;
                 if (cb.checked) visibleTiers.add(t); else visibleTiers.delete(t);
+                syncTierCheckboxes();
                 if (t >= 3 && cb.checked) alert("Heads up: this section includes high-risk / extreme content. Educate yourself; prioritise safety & consent.");
                 buildUI();
             };
@@ -1459,7 +1482,12 @@
         }
         function resetAll() {
             if (!confirm("Reset all answers to 'Unsure'?")) return;
-            STATE = {}; applyState(); refresh(); lastCompare = null; compareVisibleTiers = new Set();
+            STATE = {};
+            syncVisibleTiersFromMap(STATE);
+            buildUI();
+            refresh();
+            lastCompare = null;
+            compareVisibleTiers = new Set();
             document.getElementById('comparison').innerHTML = '';
         }
         function flash(msg) {
