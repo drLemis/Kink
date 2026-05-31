@@ -1135,6 +1135,15 @@
         }
 
         /* ============================ SCORING ============================ */
+        /* Tier engaged = at least one non-Unsure answer in that intensity (from encoded data, not UI toggles). */
+        function tierEngaged(profile, tier) {
+            return KINKS.some(k => {
+                if (k.tier !== tier) return false;
+                const vals = profile[k.id];
+                return vals && vals.some(v => v !== DEFAULT);
+            });
+        }
+
         /* skip = both exactly Unsure (and no ban) → don't show, don't count. */
         function pairScore(a, b) {
             if (a === 0 || b === 0) return { s: 0, max: 1, ban: true, skip: false };
@@ -1151,6 +1160,7 @@
 
             KINKS.forEach(k => {
                 if (handled.has(k.id)) return;
+                if (!tierEngaged(my, k.tier) || !tierEngaged(their, k.tier)) return;
                 handled.add(k.id);
                 const rows = [];
 
@@ -1377,10 +1387,19 @@
             const myMap = valsToMap(fullVals());
             const theirVals = await decode(theirRaw);
             if (!theirVals) return;
-            const r = score(myMap, valsToMap(theirVals));
+            const theirMap = valsToMap(theirVals);
+            const r = score(myMap, theirMap);
+
+            const skippedNote = (label, map) => {
+                const tiers = [0, 1, 2, 3].filter(t => !tierEngaged(map, t)).map(t => TIERS[t]);
+                if (!tiers.length) return '';
+                return `${label}: no answers in ${tiers.join(', ')} (all Unsure in their code — tier ignored). `;
+            };
+            const skipMsg = skippedNote('You', myMap) + skippedNote('Them', theirMap);
 
             let html = `<div class="score">${r.pct}%</div>
-            <small style="display:block;text-align:center">overall - averaged over things at least one of you cares about</small>`;
+            <small style="display:block;text-align:center">overall — only intensity tiers where <b>both</b> of you changed at least one answer from Unsure</small>`;
+            if (skipMsg) html += `<small style="display:block;text-align:center;margin:.35rem 0;opacity:.85">${skipMsg}</small>`;
 
             if (r.bans.length) {
                 html += `<div class="result match-ban"><span class="banflag">⚠ Hard limits (vetoed):</span>
